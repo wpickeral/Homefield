@@ -10,8 +10,39 @@ import SportModal from './components/SportModal'
 import BaseballScoreboard from './components/BaseballScoreboard'
 import FootballScoreboard from './components/FootballScoreboard'
 import HomeRunCelebration from './components/HomeRunCelebration'
+import FootballCelebration, { type FootballEventType } from './components/FootballCelebration'
+import BaseRunCelebration, { type BaseRunEventType } from './components/BaseRunCelebration'
+
+// Maps a football metric key to its celebration type
+const FOOTBALL_EVENT_MAP: Partial<Record<string, FootballEventType>> = {
+  touchdowns:    'touchdown',
+  fieldGoals:    'fieldGoal',
+  flags:         'penalty',
+  interceptions: 'interception',
+}
+
+// Maps a baseball base-running metric key to its celebration type
+const BASE_RUN_EVENT_MAP: Partial<Record<string, BaseRunEventType>> = {
+  steals:  'stolen',
+  doubles: 'double',
+  triples: 'triple',
+}
 
 interface HrCelebration {
+  playerName: string
+  colorHex: string
+  key: number
+}
+
+interface FbCelebration {
+  type: FootballEventType
+  playerName: string
+  colorHex: string
+  key: number
+}
+
+interface BrCelebration {
+  type: BaseRunEventType
   playerName: string
   colorHex: string
   key: number
@@ -21,6 +52,8 @@ export default function App() {
   const [ownerName, setOwnerName] = useState('')
   const [sport, setSport] = useState<SportDef | null>(null)
   const [hrCelebration, setHrCelebration] = useState<HrCelebration | null>(null)
+  const [fbCelebration, setFbCelebration] = useState<FbCelebration | null>(null)
+  const [brCelebration, setBrCelebration] = useState<BrCelebration | null>(null)
 
   const metrics = sport?.metrics ?? []
   const theme = getSportTheme(sport)
@@ -33,10 +66,41 @@ export default function App() {
 
   function handleAdjustScore(id: string, metricKey: string, delta: number) {
     adjustScore(id, metricKey, delta)
-    if (metricKey === 'homeRuns' && delta === 1) {
-      const player = players.find(p => p.id === id)
-      if (player) {
-        setHrCelebration(prev => ({
+
+    if (delta !== 1) return
+    const player = players.find(p => p.id === id)
+    if (!player) return
+
+    // Baseball: home run
+    if (metricKey === 'homeRuns') {
+      setHrCelebration(prev => ({
+        playerName: player.name,
+        colorHex: player.colorHex,
+        key: (prev?.key ?? 0) + 1,
+      }))
+      return
+    }
+
+    // Baseball: base running (stolen base, double, triple)
+    if (sport?.id === 'baseball') {
+      const brEventType = BASE_RUN_EVENT_MAP[metricKey]
+      if (brEventType) {
+        setBrCelebration(prev => ({
+          type: brEventType,
+          playerName: player.name,
+          colorHex: player.colorHex,
+          key: (prev?.key ?? 0) + 1,
+        }))
+        return
+      }
+    }
+
+    // Football: touchdown, field goal, penalty, interception
+    if (sport?.id === 'football') {
+      const eventType = FOOTBALL_EVENT_MAP[metricKey]
+      if (eventType) {
+        setFbCelebration(prev => ({
+          type: eventType,
           playerName: player.name,
           colorHex: player.colorHex,
           key: (prev?.key ?? 0) + 1,
@@ -45,7 +109,9 @@ export default function App() {
     }
   }
 
-  const dismissCelebration = useCallback(() => setHrCelebration(null), [])
+  const dismissHr = useCallback(() => setHrCelebration(null), [])
+  const dismissFb = useCallback(() => setFbCelebration(null), [])
+  const dismissBr = useCallback(() => setBrCelebration(null), [])
 
   const hasSportDisplay = players.length > 0 && sport !== null
 
@@ -54,13 +120,32 @@ export default function App() {
       {ownerName === '' && <NameModal onSubmit={setOwnerName} />}
       {ownerName !== '' && sport === null && <SportModal onSelect={setSport} />}
 
-      {/* Home run celebration overlay */}
       {hrCelebration && (
         <HomeRunCelebration
           key={hrCelebration.key}
           playerName={hrCelebration.playerName}
           colorHex={hrCelebration.colorHex}
-          onDismiss={dismissCelebration}
+          onDismiss={dismissHr}
+        />
+      )}
+
+      {fbCelebration && (
+        <FootballCelebration
+          key={fbCelebration.key}
+          type={fbCelebration.type}
+          playerName={fbCelebration.playerName}
+          colorHex={fbCelebration.colorHex}
+          onDismiss={dismissFb}
+        />
+      )}
+
+      {brCelebration && (
+        <BaseRunCelebration
+          key={brCelebration.key}
+          type={brCelebration.type}
+          playerName={brCelebration.playerName}
+          colorHex={brCelebration.colorHex}
+          onDismiss={dismissBr}
         />
       )}
 
@@ -73,13 +158,6 @@ export default function App() {
         onChangeSport={changeSport}
       />
 
-      {/*
-        iPad-first layout:
-        - Single column on mobile & portrait iPad
-        - Two-column grid on landscape iPad / desktop (lg: 1024px+)
-          Left: sticky scoreboard display
-          Right: player input controls
-      */}
       <main className="flex-1 w-full mx-auto px-4 md:px-8 py-6 md:py-8 max-w-5xl">
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[1fr_420px] lg:gap-8 lg:items-start">
 
@@ -102,7 +180,6 @@ export default function App() {
 
           {/* ── Right column: input controls ── */}
           <div className="flex flex-col gap-6">
-            {/* Divider — only visible in single-column layout when scoreboard is showing */}
             {hasSportDisplay && (
               <div className="flex items-center gap-3 lg:hidden">
                 <div className="flex-1 h-px bg-gray-300" />
